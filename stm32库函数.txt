@@ -1,0 +1,260 @@
+1、	//端口复用
+	//使能端口时钟
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+	//使能串口时钟
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
+	
+	GPIO_InitTypeDef GPIO_InitStructure;
+	 
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+	 
+	
+2、	//重映射
+	//使能引脚和外设后使能AFIO时钟并开启重映射
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
+	GPIO_PinRemapConfig(GPIO_Remap_USART1, ENABLE);
+	
+
+3、	//中断分组设置及中断优先级管理
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2); //2位抢占优先级，2位响应优先级
+	
+	NVIC_InitTypeDef NVIC_InitStructure;
+	NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
+	NVIC_Init(&NVIC_InitStructure);
+
+
+4、	GPIO
+	八种模式：输入浮空、输入上拉、输入下拉、模拟输入、推挽输出、开漏输出、推挽式复用功能、开漏复用
+	七寄存器：配置寄存器CRL和CRH、数据寄存器IDR和ODR、置位/复位寄存器BSRR、复位寄存器BRR、锁存寄存器LCKR
+
+	void GPIO_Init(GPIO_TypeDef* GPIOx, GPIO_InitTypeDef* GPIO_InitStruct)； 
+	uint8_t GPIO_ReadInputDataBit(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin)    返回值是 1(Bit_SET)或者 0(Bit_RESET); 
+	void GPIO_Write(GPIO_TypeDef* GPIOx, uint16_t PortVal); 
+	置位：GPIOA->BSRR=1<<1  	复位： GPIOA->BSRR=1<<(16+1) 
+	void GPIO_SetBits(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin)
+	void GPIO_ResetBits(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin) 
+
+	操作步骤为： 
+	1） 使能 IO 口时钟。调用函数为 RCC_APB2PeriphClockCmd()。
+	2） 初始化 IO 参数。调用函数 GPIO_Init(); 
+	3） 操作 IO
+
+	编译数据
+	Code：表示程序所占用 FLASH 的大小（FLASH）
+	RO-data：即 Read Only-data，表示程序定义的常量，如 const 类型（FLASH
+	RW-data：即 Read Write-data，表示已被初始化的全局变量（SRAM）
+	ZI-data：即 Zero Init-data，表示未被初始化的全局变量(SRAM) 
+
+
+5、	软件仿真设置
+	Debug内use simulator
+	1）勾选Run to main
+	2）CPU DLL：SARMCM3.DLL、Parameter：-REMAP
+	3）Dialog DLL：DARMSTM.DLL、Parameter：-pSTM32F103ZE
+	（硬件仿真时改TARMSTM.DLL）
+
+
+6、	按键连按函数
+	//按键处理函数
+	//返回按键值
+	//mode:0,不支持连续按;1,支持连续按;
+	//0，没有任何按键按下
+	//1，KEY0按下
+	//2，KEY1按下
+	//3，KEY3按下 WK_UP
+	//注意此函数有响应优先级,KEY0>KEY1>KEY_UP!!
+	u8 KEY_Scan(u8 mode)
+	{	 
+		static u8 key_up=1; //松开标志
+		if(mode) key_up=1;  //支持连按
+		if(key_up&&(KEY0==0||KEY1==0||WK_UP==1))
+		{
+			delay_ms(10); //消抖
+			key_up=0;
+			if(KEY0==0) return KEY0_PRES;
+			else if(KEY1==0) return KEY1_PRES;
+			else if(WK_UP==1) return WKUP_PRES;
+		}
+		else if(KEY0==1&&KEY1==1&&WK_UP==0)
+			key_up=1;
+		return 0; //无按键按下
+	}
+
+
+7、	串口
+	串口设置步骤： 
+	1) 串口时钟使能，GPIO 时钟使能 
+	2) 串口复位 
+	3) GPIO 端口模式设置 
+	4) 串口参数初始化 
+	5) 开启中断并且初始化 NVIC（如果需要开启中断才需要这个步骤） 
+	6) 使能串口 
+	7) 编写中断处理函数
+
+	串口时钟使能 RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1)； 
+	串口复位 void USART_DeInit(USART_TypeDef* USARTx);//串口复位 
+	初始化设置参数：波特率，字长，停止位，奇偶校验位， 硬件数据流控制，模式（收，发）
+	串口参数初始化 void USART_Init(USART_TypeDef* USARTx, USART_InitTypeDef* USART_InitStruct)； 
+	数据发送与接收 
+	void USART_SendData(USART_TypeDef* USARTx, uint16_t Data); 
+	uint16_t USART_ReceiveData(USART_TypeDef* USARTx); 
+	状态寄存器USART_SR  bit5：RXNE（读数据寄存器非空） bit6：TC（发送完成）
+	数据寄存器USART_DR：写0使RXNE/TC清除，或读寄存器也使RXNE/TC清零
+	读串口状态 FlagStatus USART_GetFlagStatus(USART_TypeDef* USARTx, uint16_t USART_FLAG)； 
+	例： USART_GetFlagStatus(USART1, USART_FLAG_RXNE);   USART_GetFlagStatus(USART1, USART_FLAG_TC); 
+	串口使能 USART_Cmd(USART1, ENABLE);
+	开启串口响应中断 void USART_ITConfig(USART_TypeDef* USARTx, uint16_t USART_IT,  FunctionalState NewState) 
+	获取相应中断状态 ITStatus USART_GetITStatus(USART_TypeDef* USARTx, uint16_t USART_IT) 
+
+
+8、	外部中断
+	19个外部中断：
+	线 0~15：对应外部 IO 口的输入中断。 
+	线 16：连接到 PVD 输出。 
+	线 17：连接到 RTC 闹钟事件。
+	线 18：连接到 USB 唤醒事件。 
+
+	配置 GPIO 与中断线的映射关系 void GPIO_EXTILineConfig(uint8_t GPIO_PortSource, uint8_t GPIO_PinSource)
+	中断线上中断的初始化 void EXTI_Init(EXTI_InitTypeDef* EXTI_InitStruct); 需先配置好中断线、中断模式、触发方式
+	中断服务函数 EXTI0_IRQHandler （只有6个，0-4各一个，5-9共用一个，10-15共用一个）
+	中断是否发生 ITStatus EXTI_GetITStatus(uint32_t EXTI_Line)； 
+	清除中断标志位 void EXTI_ClearITPendingBit(uint32_t EXTI_Line)
+	EXTI_GetFlagStatus 和 EXTI_ClearFlag
+	
+	步骤： 
+	1）初始化 IO 口为输入。 
+	2）开启 AFIO 时钟 
+	3）设置 IO 口与中断线的映射关系。 
+	4）初始化线上中断，设置触发条件等。 
+	5）配置中断分组（NVIC），并使能中断。 
+	6）编写中断服务函数。 
+
+
+9、	独立看门狗IWDG
+	内部低速时钟LSI 40KHz
+	单片机系统在外界的干扰下会出现程序跑飞的现象导致出现死循环，看门狗电路就是为了避免 这种情况的发生
+	看门狗的作用就是在一定时间内（通过定时计数器实现）没有接收喂狗信号 （表示 MCU 已经挂了），便实现处理器的自动复位重启（发送复位信号） 
+
+	键值寄存器 IWDG_KR、预分频寄存器 IWDG_PR、重装载寄存器 IWDG_RLR
+	写入 0xCCCC，开始启用独立看门狗，此时计数器开始从其复位值 0xFFF 递减计数
+	当计数器计数到末尾 0x000 时，会产生一个复位信号(IWDG_RESET)。 
+	只要键寄存器 IWDG_KR 中被写入 0xAAAA，重装载寄存器IWDG_RLR 中的值就会被重新加载到计数器中
+	IWDG_PR 和 IWDG_RLR 寄存器具有写保护功能。要修改这两个寄存器的值，必须先向 IWDG_KR 寄存器中写入 0x5555
+
+	取消寄存器写保护（向 IWDG_KR 写入 0X5555）  IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable); 
+	设置独立看门狗的预分频系数和重装载值  void IWDG_SetPrescaler(uint8_t IWDG_Prescaler);  void IWDG_SetReload(uint16_t Reload)
+	喂狗时间 Tout=((4×2^prer) ×rlr) /40  （prer 为看门狗时钟预分频值（IWDG_PR 值）， 范围为 0~7；rlr 为看门狗的重装载值（IWDG_RLR 的值） ）
+	重载计数值喂狗（向 IWDG_KR 写入 0XAAAA）  IWDG_ReloadCounter();
+	启动看门狗(向 IWDG_KR 写入 0XCCCC)  IWDG_Enable(); 
+	
+	一旦启用，就不能再被关闭！
+
+
+10、	窗口看门狗WWDG
+	T[6:0]是控制寄存器 WWDG_CR 的低七位，W[6:0]是窗口配置寄存器 WWDG->CFR 的低七位
+	T[6:0] 是窗口看门狗的计数器，而W[6:0]则是窗口看门狗的上窗口，下窗口值是固定的（0X40）。
+	只能在窗口之内被刷新 
+	窗口看门狗的超时公式如下： Twwdg=(4096×2^WDGTB×(T[5:0]+1)) /Fpclk1
+	Twwdg：WWDG 超时时间（单位为 ms）  Fpclk1：APB1 的时钟频率（单位为 Khz）  WDGTB：WWDG 的预分频系数  T[5:0]：窗口看门狗的计数器低 6 位 
+	控制寄存器（WWDG_CR）（bit7 看门狗的激活位）、配置寄存器（WWDG_CFR）（bit9 EWI提前唤醒中断、bit8、7 WDGTB[1:0] 分频）、状态寄存器（WWDG_SR）（记录当前是否有提前唤醒 的标志）
+	
+	使能 WWDG 时钟 RCC_APB1PeriphClockCmd(RCC_APB1Periph_WWDG, ENABLE)
+	设置窗口值和分频数 void WWDG_SetWindowValue(uint8_t WindowValue)； void WWDG_SetPrescaler(uint32_t WWDG_Prescaler)
+	开启 WWDG 中断并分组  WWDG_EnableIT(); 
+	设置计数器初始值并使能看门狗 void WWDG_Enable(uint8_t Counter)；
+	编写中断服务函数  
+
+
+11、	定时器中断
+	通用定时器（TIM2-5）是一个通过可编程预分频器（PSC）驱动的 16 位自动装载计数器 （CNT）构成
+	1)16 位向上、向下、向上/向下自动装载计数器（TIMx_CNT）。 
+	2)16 位可编程(可以实时修改)预分频器(TIMx_PSC)，计数器时钟频率的分频系数为 1～ 65535 之间的任意数值。 
+	3）4 个独立通道（TIMx_CH1~4），这些通道可以用来作为：  
+		A．输入捕获  B．输出比较  C．PWM 生成(边缘或中间对齐模式)  D．单脉冲模式输出  
+	4）可使用外部信号（TIMx_ETR）控制定时器和定时器互连（可以用 1 个定时器控制另外 一个定时器）的同步电路。 
+	5）如下事件发生时产生中断/DMA：  
+		A．更新：计数器向上溢出/向下溢出，计数器初始化(通过软件或者内部/外部触发)  
+		B．触发事件(计数器启动、停止、初始化或者由内部/外部触发计数)  
+		C．输入捕获  
+		D．输出比较  
+		E．支持针对定位的增量(正交)编码器和霍尔传感器电路  
+		F．触发输入作为外部时钟或者按周期的电流管理
+
+	控制寄存器 1（TIMx_CR1）
+	DMA/中断使能寄存器 （TIMx_DIER）（bit0 UIE 更新中断允许位）
+	预分频寄存器（TIMx_PSC）
+	TIMx_CNT 寄存器
+	自动重装载寄存器（TIMx_ARR）（对应着 2 个寄存器，一个看不到叫影子寄存器，APRE=0 时，预装载寄存器的内容可以随时传送到影子寄存器，此时 2 者是连通的；而 APRE=1 时，在每一次更新事件（UEV）时，才把预装在寄存器的内容传送到 影子寄存器）
+	状态寄存器（TIMx_SR）
+
+	定时器的时钟来源有 4 个： 
+	1）内部时钟（CK_INT） （由APB1倍频来的）（高级定时器时钟来源APB2）
+	2）外部时钟模式 1：外部输入脚（TIx） 
+	3）外部时钟模式 2：外部触发输入（ETR） 
+	4）内部触发输入（ITRx）：使用 A 定时器作为 B 定时器的预分频器（A 为 B 提供时钟）。
+	TIMx_SMCR 寄存器的相关位来设置
+	
+	步骤：
+ 	TIM3 时钟使能 RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE); 
+	初始化定时器参数,设置自动重装值，分频系数，计数方式等 voidTIM_TimeBaseInit(TIM_TypeDef*TIMx, TIM_TimeBaseInitTypeDef* TIM_TimeBaseInitStruct); 
+	设置 TIM3_DIER 允许更新中断 void TIM_ITConfig(TIM_TypeDef* TIMx, uint16_t TIM_IT, FunctionalState NewState)
+	TIM3 中断优先级设置 
+	允许 TIM3 工作，也就是使能 TIM3（CEN位置1） void TIM_Cmd(TIM_TypeDef* TIMx, FunctionalState NewState) 
+	编写中断服务函数
+	
+	读取中断状态寄存器的值 ITStatus TIM_GetITStatus(TIM_TypeDef* TIMx, uint16_t TIM_IT)
+	清除中断标志位 void TIM_ClearITPendingBit(TIM_TypeDef* TIMx, uint16_t TIM_IT) 
+
+
+12、	PWM（脉冲宽度调制）
+	除TIM6、7，其他定时器都可产生PWM
+	高级定时器TIM1、8可同时产生7路PWM，通用定时器4路
+	
+	捕获/比较模式寄存器 （TIMx_CCMR1/2）（OCxM[2:0]配置7种模式，110/111 PWM模式，极性相反）
+	捕获/比较使能寄存器（TIMx_CCER）
+	捕获/比较寄存器（ TIMx_CCR1~4）
+
+	开启 TIM3 时钟以及复用功能时钟，配置 PB5 为复用输出 RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE)
+	设置 AFIO 时钟 RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE)
+	设置 TIM3_CH2 重映射到 PB5 上 void GPIO_PinRemapConfig(uint32_t GPIO_Remap, FunctionalState NewState)
+	初始化 TIM3,设置 TIM3 的 ARR 和 PSC TIM_TimeBaseInit(TIM3, &TIM_TimeBaseStructure)
+	设置 TIM3_CH2 的 PWM 模式 void TIM_OC2Init(TIM_TypeDef* TIMx, TIM_OCInitTypeDef* TIM_OCInitStruct)
+	使能 TIM3 的 CH2 输出 TIM_OC2Init(TIM3, &TIM_OCInitStructure)
+	使能 TIM3 TIM_Cmd(TIM3, ENABLE); 
+	使能预装载寄存器 TIM_OC2PreloadConfig(TIM3, TIM_OCPreload_Enable)
+	修改 TIM3_CCR2 来控制占空比 void TIM_SetCompare2(TIM_TypeDef* TIMx, uint16_t Compare2)
+
+
+13、	DMA（直接存储器访问）
+	DMA 传输将数据从一个 地址空间复制到另外一个地址空间
+	DMA1 有 7 个通道。DMA2 有 5 个通道
+	七个请求间的优先权可以通过软件编程设置(共有四级：很高、高、中等和低)，假如 在相等优先权时由硬件决定(请求 0 优先于请求 1，依此类推) 
+	支持循环的缓冲器管理 
+	每个通道都有3 个事件标志(DMA 半传输HT，DMA 传输完成TC和 DMA 传输出错TE)，这 3 个 事件标志逻辑或成为一个单独的中断请求
+	
+	DMA 中断状态寄存器（DMA_ISR）
+	DMA 中断标志清除寄存器（DMA_IFCR）（对应DMA_ISR，写0清除）
+	DMA 通道 x 配置寄存器（DMA_CCRx）（数据宽度、外设及存储器的宽度、通道优先级、增量模式、传输方向、中断允许、使能等 ）
+	DMA 通道 x 传输数据量寄存器（DMA_CNDTRx）
+	DMA 通道 x 的外设地址寄存器（DMA_CPARx）
+	DMA 通道 x 的存储器地址寄存器（DMA_CMARx）
+	
+	配置步骤：
+	使能 DMA 时钟 RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE)
+	初始化 DMA 通道 4 参数 void DMA_Init(DMA_Channel_TypeDef* DMAy_Channelx,  DMA_InitTypeDef* DMA_InitStruct) 
+	使能串口 DMA 发送 USART_DMACmd(USART1,USART_DMAReq_Tx,ENABLE); 
+	使能 DMA1 通道 4，启动传输 DMA_Cmd(DMA_CHx, ENABLE);
+	查询 DMA 传输状态 FlagStatus DMA_GetFlagStatus(uint32_t DMAy_FLAG) 
+	获取当前剩余数据量大小 uint16_t DMA_GetCurrDataCounter(DMA_Channel_TypeDef* DMAy_Channelx) 
+	
+
+
+
+
+
+
